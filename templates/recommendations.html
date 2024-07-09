@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Recommendations</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Your Movie Recommendations</h1>
+        <canvas id="recommendationChart" width="400" height="200"></canvas>
+        <ul class="list-group mt-4">
+            {% for recommendation in recommendations %}
+                <li class="list-group-item">
+                    <strong>{{ recommendation['title'] }}</strong> ({{ recommendation['genres'] }}) - Score: {{ recommendation['score'] }}
+                </li>
+            {% endfor %}
+        </ul>
+        <a href="/" class="btn btn-primary mt-4">Go Back</a>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script>
+        var ctx = document.getElementById('recommendationChart').getContext('2d');
+        var recommendationChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [{% for recommendation in recommendations %}'{{ recommendation["title"] }}',{% endfor %}],
+                datasets: [{
+                    label: 'Recommendation Scores',
+                    data: [{% for recommendation in recommendations %}{{ recommendation["score"] }},{% endfor %}],
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
