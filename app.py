@@ -1,13 +1,14 @@
 from flask import Flask, request, render_template, flash, redirect, url_for
 import pandas as pd
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import mysql.connector
 from utils.database import get_db_connection
-from models.collaborative_filtering import item_based_recommendations, user_based_recommendations
-from models.deep_learning_model import DeepLearningRecommender  # 新增
+from models.collaborative_filtering import user_based_recommendations, item_based_recommendations, \
+    cosine_similarity_manual
+from models.deep_learning_model import DeepLearningRecommender
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -19,6 +20,10 @@ dl_recommender = DeepLearningRecommender()
 with open('models/deep_learning_rmse.txt', 'r') as f:
     deep_learning_rmse = float(f.readline().strip())
 
+# 加载线性回归模型和映射
+linear_regression_model = joblib.load('models/linear_regression_model.pkl')
+user_id_map = joblib.load('models/user_id_map.pkl')
+movie_id_map = joblib.load('models/movie_id_map.pkl')
 
 def get_data_from_db():
     try:
@@ -35,19 +40,16 @@ def get_data_from_db():
         print(f"Error: {err}")
         return None, None
 
-
 def calculate_rmse(predictions, actual):
     predictions = predictions[actual.nonzero()].flatten()
     actual = actual[actual.nonzero()].flatten()
     return np.sqrt(mean_squared_error(predictions, actual))
-
 
 def predict_ratings(matrix, similarity, type='user'):
     if type == 'user':
         return similarity.dot(matrix) / np.array([np.abs(similarity).sum(axis=1)]).T
     elif type == 'item':
         return matrix.dot(similarity) / np.array([np.abs(similarity).sum(axis=1)])
-
 
 # 初始加载数据和矩阵
 ratings, movies = get_data_from_db()
@@ -60,8 +62,8 @@ train_data, test_data = train_test_split(ratings, test_size=0.2, random_state=42
 train_matrix = train_data.pivot_table(index='userId', columns='movieId', values='rating').fillna(0)
 test_matrix = test_data.pivot_table(index='userId', columns='movieId', values='rating').fillna(0)
 
-user_similarity = cosine_similarity(train_matrix)
-item_similarity = cosine_similarity(train_matrix.T)
+user_similarity = cosine_similarity_manual(train_matrix)
+item_similarity = cosine_similarity_manual(train_matrix.T)
 
 user_prediction = predict_ratings(train_matrix.values, user_similarity, type='user')
 item_prediction = predict_ratings(train_matrix.values, item_similarity, type='item')
@@ -69,12 +71,17 @@ item_prediction = predict_ratings(train_matrix.values, item_similarity, type='it
 user_rmse = calculate_rmse(user_prediction, test_matrix.values)
 item_rmse = calculate_rmse(item_prediction, test_matrix.values)
 
+# 计算线性回归模型的 RMSE
+X_test = test_data[['userId', 'movieId']].copy()
+X_test['user_id'] = X_test['userId'].map(user_id_map)
+X_test['movie_id'] = X_test['movieId'].map(movie_id_map)
+y_test = test_data['rating']
+y_pred = linear_regression_model.predict(X_test[['user_id', 'movie_id']])
+linear_regression_rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
 @app.route('/')
 def home():
-    return render_template('index.html', user_rmse=user_rmse, item_rmse=item_rmse,
-                           deep_learning_rmse=deep_learning_rmse)
-
+    return render_template('index.html', user_rmse=user_rmse, item_rmse=item_rmse, deep_learning_rmse=deep_learning_rmse, linear_regression_rmse=linear_regression_rmse)
 
 @app.route('/recommend', methods=['GET'])
 def recommend():
@@ -99,6 +106,22 @@ def recommend():
                 'genres': movies[movies['movieId'] == item_id]['genres'].values[0],
                 'score': score
             } for item_id, score in recommended_items]
+        elif algorithm == 'linear_regression':  # 新增线性回归模型推荐算法
+            if user_id in user_id_map:
+                user_idx = user_id_map[user_id]
+                recommendations = []
+                for movie_id in movie_id_map.keys():
+                    movie_idx = movie_id_map[movie_id]
+                    score = linear_regression_model.predict([[user_idx, movie_idx]])[0]
+                    recommendations.append({
+                        'movieId': movie_id,
+                        'title': movies[movies['movieId'] == movie_id]['title'].values[0],
+                        'genres': movies[movies['movieId'] == movie_id]['genres'].values[0],
+                        'score': score
+                    })
+                recommendations = sorted(recommendations, key=lambda x: x['score'], reverse=True)[:num_recommendations]
+            else:
+                recommendations = []
         else:
             recommendations = []
         return render_template('recommendations.html', recommendations=recommendations, user_id=user_id)
@@ -108,7 +131,6 @@ def recommend():
     except Exception as e:
         flash(f"An error occurred: {e}", "danger")
         return redirect(url_for('home'))
-
 
 @app.route('/new_user', methods=['GET', 'POST'])
 def new_user():
@@ -145,8 +167,8 @@ def new_user():
         ratings, movies = get_data_from_db()
         dl_recommender.prepare_data(ratings)
         train_matrix = ratings.pivot_table(index='userId', columns='movieId', values='rating').fillna(0)
-        user_similarity = cosine_similarity(train_matrix)
-        item_similarity = cosine_similarity(train_matrix.T)
+        user_similarity = cosine_similarity_manual(train_matrix)
+        item_similarity = cosine_similarity_manual(train_matrix.T)
 
         flash("Thank you for providing your ratings! Here are your recommendations.", "success")
         return redirect(url_for('recommend', user_id=user_id, num_recommendations=5, algorithm='user_based'))
@@ -154,7 +176,6 @@ def new_user():
         # 随机选择一些电影供新用户评分
         sample_movies = movies.sample(5).to_dict(orient='records')
         return render_template('new_user.html', sample_movies=sample_movies)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
