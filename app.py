@@ -25,6 +25,7 @@ linear_regression_model = joblib.load('models/linear_regression_model.pkl')
 user_id_map = joblib.load('models/user_id_map.pkl')
 movie_id_map = joblib.load('models/movie_id_map.pkl')
 
+
 def get_data_from_db():
     try:
         db = get_db_connection()
@@ -40,16 +41,19 @@ def get_data_from_db():
         print(f"Error: {err}")
         return None, None
 
+
 def calculate_rmse(predictions, actual):
     predictions = predictions[actual.nonzero()].flatten()
     actual = actual[actual.nonzero()].flatten()
     return np.sqrt(mean_squared_error(predictions, actual))
+
 
 def predict_ratings(matrix, similarity, type='user'):
     if type == 'user':
         return similarity.dot(matrix) / np.array([np.abs(similarity).sum(axis=1)]).T
     elif type == 'item':
         return matrix.dot(similarity) / np.array([np.abs(similarity).sum(axis=1)])
+
 
 # 初始加载数据和矩阵
 ratings, movies = get_data_from_db()
@@ -79,9 +83,12 @@ y_test = test_data['rating']
 y_pred = linear_regression_model.predict(X_test[['user_id', 'movie_id']])
 linear_regression_rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
+
 @app.route('/')
 def home():
-    return render_template('index.html', user_rmse=user_rmse, item_rmse=item_rmse, deep_learning_rmse=deep_learning_rmse, linear_regression_rmse=linear_regression_rmse)
+    return render_template('index.html', user_rmse=user_rmse, item_rmse=item_rmse,
+                           deep_learning_rmse=deep_learning_rmse, linear_regression_rmse=linear_regression_rmse)
+
 
 @app.route('/recommend', methods=['GET'])
 def recommend():
@@ -132,6 +139,7 @@ def recommend():
         flash(f"An error occurred: {e}", "danger")
         return redirect(url_for('home'))
 
+
 @app.route('/new_user', methods=['GET', 'POST'])
 def new_user():
     if request.method == 'POST':
@@ -170,12 +178,13 @@ def new_user():
         user_similarity = cosine_similarity_manual(train_matrix)
         item_similarity = cosine_similarity_manual(train_matrix.T)
 
-        flash("Thank you for providing your ratings! Here are your recommendations.", "success")
+        flash("Thank you for providing your ratings!", "success")
         return redirect(url_for('recommend', user_id=user_id, num_recommendations=5, algorithm='user_based'))
     else:
         # 随机选择一些电影供新用户评分
         sample_movies = movies.sample(5).to_dict(orient='records')
         return render_template('new_user.html', sample_movies=sample_movies)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
