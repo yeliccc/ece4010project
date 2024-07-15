@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 
@@ -15,7 +16,8 @@ class RBM:
         self.regularization = regularization
 
         # 初始化权重和偏置
-        self.weights = tf.Variable(tf.random.normal([self.visible_units, self.hidden_units], stddev=0.01, dtype=tf.float32))
+        self.weights = tf.Variable(
+            tf.random.normal([self.visible_units, self.hidden_units], stddev=0.01, dtype=tf.float32))
         self.visible_bias = tf.Variable(tf.zeros([self.visible_units], dtype=tf.float32))
         self.hidden_bias = tf.Variable(tf.zeros([self.hidden_units], dtype=tf.float32))
 
@@ -27,6 +29,8 @@ class RBM:
 
     def train(self, data):
         num_samples = data.shape[0]
+
+        optimizer = tf.optimizers.Adam(learning_rate=self.learning_rate)
 
         for epoch in range(self.epochs):
             np.random.shuffle(data)
@@ -44,6 +48,7 @@ class RBM:
                     negative_hidden_probs = self.sigmoid(
                         tf.matmul(negative_visible_probs, self.weights) + self.hidden_bias)
 
+                    # 计算正向和反向传播的关联矩阵
                     positive_assoc = tf.matmul(tf.transpose(batch), positive_hidden_probs)
                     negative_assoc = tf.matmul(tf.transpose(negative_visible_probs), negative_hidden_probs)
 
@@ -52,11 +57,21 @@ class RBM:
                     regularization_loss = self.regularization * tf.reduce_sum(tf.square(self.weights))
                     cost = reconstruction_loss + regularization_loss
 
-                # 更新权重和偏置
+                # 计算权重和偏置的梯度
                 gradients = tape.gradient(cost, [self.weights, self.visible_bias, self.hidden_bias])
+
+                # 更新权重和偏置
                 optimizer.apply_gradients(zip(gradients, [self.weights, self.visible_bias, self.hidden_bias]))
 
-            print(f"Epoch {epoch + 1}/{self.epochs} completed. Cost: {cost.numpy()}")
+                # 使用对比散度更新权重
+                self.weights.assign_add(
+                    self.learning_rate * (positive_assoc - negative_assoc) / tf.cast(tf.shape(batch)[0], tf.float32))
+                self.visible_bias.assign_add(
+                    self.learning_rate * tf.reduce_mean(batch - negative_visible_probs, axis=0))
+                self.hidden_bias.assign_add(
+                    self.learning_rate * tf.reduce_mean(positive_hidden_probs - negative_hidden_probs, axis=0))
+
+            #print(f"Epoch {epoch + 1}/{self.epochs} completed. Cost: {cost.numpy()}")
 
     def predict(self, data):
         hidden_probs = self.sigmoid(tf.matmul(data.astype(np.float32), self.weights) + self.hidden_bias)
@@ -65,12 +80,15 @@ class RBM:
 
 
 # 加载数据
-data = pd.read_csv('../ml-latest-small/ratings.csv')
+data = pd.read_csv('ml-latest-small/ratings.csv')
 
 # 准备数据
 data_matrix = data.pivot(index='userId', columns='movieId', values='rating').fillna(0)
 scaler = MinMaxScaler()
 data_matrix = scaler.fit_transform(data_matrix).astype(np.float32)
+
+# 划分训练集和测试集
+train_data, test_data = train_test_split(data_matrix, test_size=0.2, random_state=42)
 
 # 初始化和训练RBM
 visible_units = data_matrix.shape[1]
@@ -78,11 +96,11 @@ hidden_units = 64  # 隐层节点数量可调整
 rbm = RBM(visible_units, hidden_units, learning_rate=0.01, epochs=10, batch_size=10)
 
 optimizer = tf.optimizers.Adam(learning_rate=rbm.learning_rate)
-rbm.train(data_matrix)
+rbm.train(train_data)
 
 
 # 进行预测并计算RMSE
-def calculate_rmse(rbm, data_matrix, scaler):
+def rbm_calculate_rmse(rbm, data_matrix, scaler):
     predictions = []
     true_ratings = []
 
@@ -99,6 +117,8 @@ def calculate_rmse(rbm, data_matrix, scaler):
     return rmse
 
 
-# 计算并输出RMSE
-rmse = calculate_rmse(rbm, data_matrix, scaler)
-print(f"Root Mean Squared Error (RMSE): {rmse:.4f}")
+# 计算并输出RMSE(test_data）
+rbm_rmse = rbm_calculate_rmse(rbm, test_data, scaler)
+
+with open('rbm_rmse.txt', 'w') as f:
+    f.write(str(rbm_rmse))

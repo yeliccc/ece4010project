@@ -5,6 +5,7 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import mysql.connector
+from models.RBM import RBM, rbm_calculate_rmse, scaler
 from utils.database import get_db_connection
 from models.collaborative_filtering import user_based_recommendations, item_based_recommendations, \
     cosine_similarity_manual
@@ -62,6 +63,7 @@ if ratings is None or movies is None:
 
 dl_recommender.prepare_data(ratings)  # 准备深度学习推荐模型的数据
 
+#训练协同过滤
 train_data, test_data = train_test_split(ratings, test_size=0.2, random_state=42)
 train_matrix = train_data.pivot_table(index='userId', columns='movieId', values='rating').fillna(0)
 test_matrix = test_data.pivot_table(index='userId', columns='movieId', values='rating').fillna(0)
@@ -83,11 +85,17 @@ y_test = test_data['rating']
 y_pred = linear_regression_model.predict(X_test[['user_id', 'movie_id']])
 linear_regression_rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-
+# 初始化和训练RBM
+visible_units = train_matrix.shape[1]
+hidden_units = 64  # 隐层节点数量可调整
+rbm = RBM(visible_units, hidden_units, learning_rate=0.01, epochs=10, batch_size=10, regularization=0.01)
+rbm.train(train_matrix.values)
+with open('rbm_rmse.txt', 'r') as f:
+    rbm_rmse = float(f.readline().strip())
 @app.route('/')
 def home():
     return render_template('index.html', user_rmse=user_rmse, item_rmse=item_rmse,
-                           deep_learning_rmse=deep_learning_rmse, linear_regression_rmse=linear_regression_rmse)
+                           deep_learning_rmse=deep_learning_rmse, linear_regression_rmse=linear_regression_rmse,RBM_rmse=rbm_rmse)
 
 
 @app.route('/recommend', methods=['GET'])
@@ -129,6 +137,19 @@ def recommend():
                 recommendations = sorted(recommendations, key=lambda x: x['score'], reverse=True)[:num_recommendations]
             else:
                 recommendations = []
+        elif algorithm == 'rbm':  # 新增RBM推荐算法
+            user_ratings = train_matrix.loc[user_id].values.reshape(1, -1)
+            predicted_ratings = rbm.predict(user_ratings).numpy().flatten()
+            recommended_indices = np.argsort(predicted_ratings)[::-1][:num_recommendations]
+            recommendations = []
+            for idx in recommended_indices:
+                movie_id = train_matrix.columns[idx]
+                recommendations.append({
+                    'movieId': movie_id,
+                    'title': movies[movies['movieId'] == movie_id]['title'].values[0],
+                    'genres': movies[movies['movieId'] == movie_id]['genres'].values[0],
+                    'score': predicted_ratings[idx]
+                })
         else:
             recommendations = []
         return render_template('recommendations.html', recommendations=recommendations, user_id=user_id)

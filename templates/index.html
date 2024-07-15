@@ -20,6 +20,7 @@
             <strong>Item-based CF RMSE:</strong> {{ item_rmse }}<br>
             <strong>Linear Regression Model RMSE:</strong> {{ linear_regression_rmse }}<br>
             <strong>Deep Learning Model RMSE:</strong> {{ deep_learning_rmse }}<br>
+            <strong>RBM RMSE:</strong> {{ RBM_rmse }}<br>
         </div>
         <form action="{{ url_for('recommend') }}" method="get" class="mt-3">
             <div class="form-group">
@@ -37,6 +38,7 @@
                     <option value="user_based">User-based Collaborative Filtering</option>
                     <option value="linear_regression">Linear Regression Model</option> <!-- 新增选项 -->
                     <option value="deep_learning">Deep Learning Model</option>
+                    <option value="rbm">RBM</option> <!-- 新增RBM算法选项 -->
                 </select>
             </div>
             <button type="submit" class="btn btn-primary">Get Recommendations</button>

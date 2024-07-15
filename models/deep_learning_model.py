@@ -33,7 +33,7 @@ class DeepLearningRecommender:
         item_array = np.array(list(self.item_to_index.values()))
 
         predictions = self.model.predict([user_array, item_array]).flatten()
-        predictions = self.scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()  # 逆标准化
+        #predictions = self.scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()  # 逆标准化
         top_indices = predictions.argsort()[-num_recommendations:][::-1]
         recommended_items = [(self.index_to_item[idx], predictions[idx]) for idx in top_indices]
 
